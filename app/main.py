@@ -18,12 +18,14 @@ def calculate(app):
     try:
         for u in STATE["universe"]:
             try:
-                ltp,ts=p.ltp(u["yahoo"]); d=p.daily(u["yahoo"])
+                intr=p.intraday(u["yahoo"])
+                ltp,ts=(float(intr.iloc[-1].Close),intr.index[-1]) if not intr.empty else p.ltp(u["yahoo"])
+                d=p.daily(u["yahoo"])
                 if ltp is None or d.empty:continue
-                ss=[rolling(u["symbol"],u["name"],d,ltp,settings.rolling_rr),
-                    weekly(u["symbol"],u["name"],d,ltp,settings.weekly_offset,settings.weekly_rr),
-                    orb(u["symbol"],u["name"],d,ltp,settings.weekly_orb_rr,False),
-                    orb(u["symbol"],u["name"],d,ltp,settings.monthly_orb_rr,True)]
+                ss=[rolling(u["symbol"],u["name"],d,intr,ltp,settings.rolling_rr),
+                    weekly(u["symbol"],u["name"],d,intr,ltp,settings.weekly_offset,settings.weekly_rr),
+                    orb(u["symbol"],u["name"],d,intr,ltp,settings.weekly_orb_rr,False),
+                    orb(u["symbol"],u["name"],d,intr,ltp,settings.monthly_orb_rr,True)]
                 for s in ss:
                     if s:
                         s["updated"]=ts.isoformat() if ts else None
