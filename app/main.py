@@ -10,37 +10,46 @@ from .data import YahooData
 from .strategies import rolling,weekly,orb
 from .alerts import notify
 
-STATE={"universe":[],"rows":[],"updated":None,"error":None,"previous":set()}
+STATE={"universe":[],"rows":[],"updated":None,"error":None,"previous":set(),"scanning":False}
 
 def calculate(app):
     rows=[]; p=app.state.data
-    for u in STATE["universe"]:
-        try:
-            ltp,ts=p.ltp(u["yahoo"]); d=p.daily(u["yahoo"])
-            if ltp is None or d.empty:continue
-            ss=[rolling(u["symbol"],u["name"],d,ltp,settings.rolling_rr),
-                weekly(u["symbol"],u["name"],d,ltp,settings.weekly_offset,settings.weekly_rr),
-                orb(u["symbol"],u["name"],d,ltp,settings.weekly_orb_rr,False),
-                orb(u["symbol"],u["name"],d,ltp,settings.monthly_orb_rr,True)]
-            for s in ss:
-                if s:
-                    s["updated"]=ts.isoformat() if ts else None
-                    rows.append(s)
-                    k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
-                    if k not in STATE["previous"]:
-                        notify(s, os.getenv("PUBLIC_URL",""))
-                        STATE["previous"].add(k)
-        except Exception:continue
-    active={f"{x['symbol']}|{x['strategy']}|{x['side']}" for x in rows}
-    STATE["previous"] &= active
-    STATE["rows"]=rows; STATE["updated"]=time.time()
+    STATE["scanning"]=True
+    try:
+        for u in STATE["universe"]:
+            try:
+                ltp,ts=p.ltp(u["yahoo"]); d=p.daily(u["yahoo"])
+                if ltp is None or d.empty:continue
+                ss=[rolling(u["symbol"],u["name"],d,ltp,settings.rolling_rr),
+                    weekly(u["symbol"],u["name"],d,ltp,settings.weekly_offset,settings.weekly_rr),
+                    orb(u["symbol"],u["name"],d,ltp,settings.weekly_orb_rr,False),
+                    orb(u["symbol"],u["name"],d,ltp,settings.monthly_orb_rr,True)]
+                for s in ss:
+                    if s:
+                        s["updated"]=ts.isoformat() if ts else None
+                        rows.append(s)
+                        k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
+                        if k not in STATE["previous"]:
+                            notify(s, os.getenv("PUBLIC_URL",""))
+                            STATE["previous"].add(k)
+            except Exception:
+                continue
+        active={f"{x['symbol']}|{x['strategy']}|{x['side']}" for x in rows}
+        STATE["previous"] &= active
+        STATE["rows"]=rows
+        STATE["updated"]=time.time()
+    finally:
+        STATE["scanning"]=False
 
 async def worker(app):
     while True:
         try:
-            if not STATE["universe"]:STATE["universe"]=build_universe()
-            calculate(app); STATE["error"]=None
-        except Exception as e:STATE["error"]=str(e)
+            if not STATE["universe"]:
+                STATE["universe"]=await asyncio.to_thread(build_universe)
+            await asyncio.to_thread(calculate,app)
+            STATE["error"]=None
+        except Exception as e:
+            STATE["error"]=str(e)
         await asyncio.sleep(settings.poll_seconds)
 
 @asynccontextmanager
@@ -55,10 +64,10 @@ app.mount("/static",StaticFiles(directory=Path(__file__).parent.parent/"static")
 def home():return (Path(__file__).parent.parent/"static/index.html").read_text()
 
 @app.get("/health")
-def health():return {"ok":True,"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"])}
+def health():return {"ok":True,"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
 
 @app.get("/api/status")
-def status():return {"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"]),"error":STATE["error"]}
+def status():return {"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
 
 @app.get("/api/signals")
 def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
