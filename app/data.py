@@ -11,15 +11,57 @@ class YahooData:
     def clean(self,d):
         if d is None or d.empty:
             return pd.DataFrame()
-        if isinstance(d.columns,pd.MultiIndex):
-            d.columns=d.columns.get_level_values(-1)
-        d.index=pd.to_datetime(d.index)
-        if d.index.tz is None:
-            d.index=d.index.tz_localize("UTC").tz_convert(self.tz)
+        x=d.copy()
+        if isinstance(x.columns,pd.MultiIndex):
+            x.columns=x.columns.get_level_values(0)
+        x.index=pd.to_datetime(x.index)
+        if x.index.tz is None:
+            x.index=x.index.tz_localize("UTC").tz_convert(self.tz)
         else:
-            d.index=d.index.tz_convert(self.tz)
+            x.index=x.index.tz_convert(self.tz)
         cols=["Open","High","Low","Close","Volume"]
-        return d[[c for c in cols if c in d.columns]].dropna(subset=["Close"])
+        return x[[c for c in cols if c in x.columns]].dropna(subset=["Close"])
+
+    def _batch(self,symbols,period,interval):
+        if not symbols:
+            return {}
+        out={}
+        for start in range(0,len(symbols),30):
+            chunk=symbols[start:start+30]
+            try:
+                raw=yf.download(
+                    tickers=chunk,period=period,interval=interval,
+                    auto_adjust=False,actions=False,prepost=False,
+                    group_by="column",threads=False,progress=False
+                )
+                if raw is None or raw.empty:
+                    continue
+                if isinstance(raw.columns,pd.MultiIndex):
+                    # yfinance returns (field, ticker) with group_by=column.
+                    fields=set(raw.columns.get_level_values(0))
+                    for sym in chunk:
+                        try:
+                            if sym not in raw.columns.get_level_values(1):
+                                continue
+                            z=raw.xs(sym,axis=1,level=1,drop_level=True)
+                            out[sym]=self.clean(z)
+                        except Exception:
+                            continue
+                else:
+                    out[chunk[0]]=self.clean(raw)
+            except Exception:
+                continue
+        return out
+
+    def prefetch(self,symbols):
+        now=time.time()
+        dneed=[s for s in symbols if s not in self.dcache or now-self.dcache[s][0]>=900]
+        ineed=[s for s in symbols if s not in self.icache or now-self.icache[s][0]>=20]
+
+        for s,d in self._batch(dneed,"60d","1d").items():
+            self.dcache[s]=(now,d)
+        for s,d in self._batch(ineed,"1d","5m").items():
+            self.icache[s]=(now,d)
 
     def daily(self,symbol):
         if symbol in self.dcache and time.time()-self.dcache[symbol][0]<900:
@@ -35,7 +77,6 @@ class YahooData:
         return d
 
     def intraday(self,symbol):
-        # Only today's 5-minute bars are required for breakout detection.
         if symbol in self.icache and time.time()-self.icache[symbol][0]<20:
             return self.icache[symbol][1]
         try:
