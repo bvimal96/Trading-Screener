@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: nifty-breakout-screener
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: POLL_SECONDS
+        value: "60"
+      - key: ALERT_COOLDOWN_MINUTES
+        value: "120"
+      - key: WEEKLY_OFFSET
+        value: "0.002"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_TO
+        sync: false
