@@ -18,16 +18,15 @@ def calculate(app):
     try:
         symbols=[u["yahoo"] for u in STATE["universe"]]
         p.prefetch(symbols)
+        usable=0
         for u in STATE["universe"]:
             try:
                 intr=p.intraday(u["yahoo"])
                 d=p.daily(u["yahoo"])
-                if intr.empty:
-                    ltp,ts=p.ltp(u["yahoo"])
-                else:
-                    ltp,ts=float(intr.iloc[-1].Close),intr.index[-1]
-                if ltp is None or d.empty:
+                if intr.empty or d.empty:
                     continue
+                usable+=1
+                ltp,ts=float(intr.iloc[-1].Close),intr.index[-1]
 
                 ss=[
                     rolling(u["symbol"],u["name"],d,intr,ltp,settings.rolling_rr),
@@ -39,7 +38,6 @@ def calculate(app):
                     if s:
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
-                        # One alert per symbol/strategy/side per running session.
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
                         if k not in STATE["previous"]:
                             notify(s,os.getenv("PUBLIC_URL",""))
@@ -50,6 +48,7 @@ def calculate(app):
         STATE["previous"] &= active
         STATE["rows"]=rows
         STATE["updated"]=time.time()
+        print(f"SCAN_OK universe={len(STATE['universe'])} usable={usable} signals={len(rows)}",flush=True)
     finally:
         STATE["scanning"]=False
 
@@ -62,6 +61,7 @@ async def worker(app):
             STATE["error"]=None
         except Exception as e:
             STATE["error"]=str(e)
+            print(f"SCAN_ERROR {e}",flush=True)
         await asyncio.sleep(settings.poll_seconds)
 
 @asynccontextmanager
