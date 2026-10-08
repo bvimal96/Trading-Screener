@@ -16,14 +16,16 @@ def calculate(app):
     rows=[]; p=app.state.data
     STATE["scanning"]=True
     try:
+        symbols=[u["yahoo"] for u in STATE["universe"]]
+        p.prefetch(symbols)
         for u in STATE["universe"]:
             try:
                 intr=p.intraday(u["yahoo"])
+                d=p.daily(u["yahoo"])
                 if intr.empty:
                     ltp,ts=p.ltp(u["yahoo"])
                 else:
                     ltp,ts=float(intr.iloc[-1].Close),intr.index[-1]
-                d=p.daily(u["yahoo"])
                 if ltp is None or d.empty:
                     continue
 
@@ -37,6 +39,7 @@ def calculate(app):
                     if s:
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
+                        # One alert per symbol/strategy/side per running session.
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
                         if k not in STATE["previous"]:
                             notify(s,os.getenv("PUBLIC_URL",""))
