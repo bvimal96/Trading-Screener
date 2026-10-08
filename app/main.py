@@ -19,20 +19,27 @@ def calculate(app):
         for u in STATE["universe"]:
             try:
                 intr=p.intraday(u["yahoo"])
-                ltp,ts=(float(intr.iloc[-1].Close),intr.index[-1]) if not intr.empty else p.ltp(u["yahoo"])
+                if intr.empty:
+                    ltp,ts=p.ltp(u["yahoo"])
+                else:
+                    ltp,ts=float(intr.iloc[-1].Close),intr.index[-1]
                 d=p.daily(u["yahoo"])
-                if ltp is None or d.empty:continue
-                ss=[rolling(u["symbol"],u["name"],d,intr,ltp,settings.rolling_rr),
+                if ltp is None or d.empty:
+                    continue
+
+                ss=[
+                    rolling(u["symbol"],u["name"],d,intr,ltp,settings.rolling_rr),
                     weekly(u["symbol"],u["name"],d,intr,ltp,settings.weekly_offset,settings.weekly_rr),
                     orb(u["symbol"],u["name"],d,intr,ltp,settings.weekly_orb_rr,False),
-                    orb(u["symbol"],u["name"],d,intr,ltp,settings.monthly_orb_rr,True)]
+                    orb(u["symbol"],u["name"],d,intr,ltp,settings.monthly_orb_rr,True)
+                ]
                 for s in ss:
                     if s:
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
                         if k not in STATE["previous"]:
-                            notify(s, os.getenv("PUBLIC_URL",""))
+                            notify(s,os.getenv("PUBLIC_URL",""))
                             STATE["previous"].add(k)
             except Exception:
                 continue
@@ -57,30 +64,40 @@ async def worker(app):
 @asynccontextmanager
 async def lifespan(app):
     app.state.data=YahooData(settings.timezone)
-    t=asyncio.create_task(worker(app)); yield; t.cancel()
+    t=asyncio.create_task(worker(app))
+    yield
+    t.cancel()
 
 app=FastAPI(title="NIFTY Live Breakout Screener",lifespan=lifespan)
 app.mount("/static",StaticFiles(directory=Path(__file__).parent.parent/"static"),name="static")
 
 @app.get("/",response_class=HTMLResponse)
-def home():return (Path(__file__).parent.parent/"static/index.html").read_text()
+def home():
+    return (Path(__file__).parent.parent/"static/index.html").read_text()
 
 @app.get("/health")
-def health():return {"ok":True,"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
+def health():
+    return {"ok":True,"updated":STATE["updated"],"universe":len(STATE["universe"]),
+            "signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
 
 @app.get("/api/status")
-def status():return {"updated":STATE["updated"],"universe":len(STATE["universe"]),"signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
+def status():
+    return {"updated":STATE["updated"],"universe":len(STATE["universe"]),
+            "signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
 
 @app.get("/api/signals")
 def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
     r=STATE["rows"]
-    if strategy:r=[x for x in r if x["strategy"]==strategy]
-    if side:r=[x for x in r if x["side"]==side]
+    if strategy:
+        r=[x for x in r if x["strategy"]==strategy]
+    if side:
+        r=[x for x in r if x["side"]==side]
     return {"updated":STATE["updated"],"data":r}
 
 @app.post("/api/refresh")
 def refresh():
-    STATE["universe"]=build_universe();calculate(app)
+    STATE["universe"]=build_universe()
+    calculate(app)
     return {"ok":True,"universe":len(STATE["universe"]),"signals":len(STATE["rows"])}
 
 @app.post("/webhooks/whatsapp")
