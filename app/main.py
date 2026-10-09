@@ -128,7 +128,7 @@ def export_xlsx(
 
     columns=[
         ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
-        ("Side","side"),("Entry Price","entry"),("LTP","ltp"),("+/- Difference","difference"),
+        ("Side","side"),("Entry Price","entry"),("LTP","ltp"),("P&L (Points)","pnl"),
         ("Stop Loss","sl"),("Target","target"),("Range","range"),
         ("Status","status"),
         ("Entry Time","entry_time"),("Event Time","event_time"),("Last Updated","updated")
@@ -150,9 +150,10 @@ def export_xlsx(
     for row in rows:
         values=[]
         for _,key in columns:
-            if key=="difference":
+            if key=="pnl":
                 try:
-                    value=round(float(row.get("ltp"))-float(row.get("entry")),2)
+                    entry=float(row.get("entry")); ltp=float(row.get("ltp"))
+                    value=round((ltp-entry) if row.get("side")=="BUY" else (entry-ltp),2)
                 except (TypeError,ValueError):
                     value=None
             elif key=="strategy":
