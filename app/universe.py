@@ -1,8 +1,8 @@
 import requests,pandas as pd
 from io import StringIO
 
-INDEXES={"NIFTY":{"name":"NIFTY 50","yahoo":"^NSEI","kind":"INDEX"},
-"BANKNIFTY":{"name":"BANKNIFTY","yahoo":"^NSEBANK","kind":"INDEX"}}
+INDEXES={"NIFTY":{"symbol":"NIFTY","name":"NIFTY 50","yahoo":"^NSEI","kind":"INDEX"},
+"BANKNIFTY":{"symbol":"BANKNIFTY","name":"NIFTY BANK","yahoo":"^NSEBANK","kind":"INDEX"}}
 
 URLS=[
  "https://www.nseindia.com/products-services/equity-derivatives-list-underlyings-information?F=4YV4",
