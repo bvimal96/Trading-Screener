@@ -50,6 +50,9 @@ def calculate(app):
                 continue
         active={f"{x['symbol']}|{x['strategy']}|{x['side']}" for x in rows}
         STATE["previous"] &= active
+        # Prioritize index signals at the top: NIFTY 50 first, then BANKNIFTY, then all other symbols.
+        priority={"NIFTY":0,"BANKNIFTY":1}
+        rows.sort(key=lambda x: priority.get(x.get("symbol"),2))
         STATE["rows"]=rows
         STATE["updated"]=time.time()
         print(f"SCAN_OK universe={len(STATE['universe'])} usable={usable} signals={len(rows)}",flush=True)
@@ -99,6 +102,8 @@ def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
         r=[x for x in r if x["strategy"]==strategy]
     if side:
         r=[x for x in r if x["side"]==side]
+    priority={"NIFTY":0,"BANKNIFTY":1}
+    r=sorted(r,key=lambda x: priority.get(x.get("symbol"),2))
     return {"updated":STATE["updated"],"data":r}
 
 @app.post("/api/refresh")
@@ -125,6 +130,8 @@ def export_xlsx(
     if search:
         q=search.strip().upper()
         rows=[x for x in rows if q in str(x.get("symbol","")).upper() or q in str(x.get("name","")).upper()]
+    priority={"NIFTY":0,"BANKNIFTY":1}
+    rows.sort(key=lambda x: priority.get(x.get("symbol"),2))
 
     columns=[
         ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
