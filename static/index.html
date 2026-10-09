@@ -43,6 +43,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
     <select id="ss"><option value="">All status</option><option>OPEN</option><option>SL HIT</option><option>TARGET HIT</option></select>
     <input id="q" placeholder="Search symbol">
     <button onclick="refresh()">Refresh now</button>
+    <button onclick="downloadExcel()">⬇ Download Excel</button>
   </div>
 
   <div class="table">
@@ -96,6 +97,15 @@ function render(){
       '<td>'+esc(r.reference)+'</td>'+
       '</tr>';
   }).join('');
+}
+
+function downloadExcel(){
+  let p=new URLSearchParams();
+  if(st.value)p.set('strategy',st.value);
+  if(sd.value)p.set('side',sd.value);
+  if(ss.value)p.set('status',ss.value);
+  if(q.value.trim())p.set('search',q.value.trim());
+  window.location.href='/api/export.xlsx?'+p.toString();
 }
 
 async function refresh(){
