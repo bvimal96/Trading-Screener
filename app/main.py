@@ -128,11 +128,17 @@ def export_xlsx(
 
     columns=[
         ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
-        ("Side","side"),("Entry Price","entry"),("LTP","ltp"),
+        ("Side","side"),("Entry Price","entry"),("LTP","ltp"),("+/- Difference","difference"),
         ("Stop Loss","sl"),("Target","target"),("Range","range"),
-        ("Status","status"),("Reference","reference"),
+        ("Status","status"),
         ("Entry Time","entry_time"),("Event Time","event_time"),("Last Updated","updated")
     ]
+    strategy_labels={
+        "Rolling 2-Day":"Roll Intra Day",
+        "Weekly High/Low":"Week HL- EOW",
+        "Weekly ORB":"Week 2 Day",
+        "Monthly ORB":"Month 2 Day"
+    }
     wb=Workbook()
     ws=wb.active
     ws.title="Screener Signals"
@@ -142,7 +148,19 @@ def export_xlsx(
         cell.fill=PatternFill("solid",fgColor="1F4E78")
         cell.alignment=Alignment(horizontal="center")
     for row in rows:
-        ws.append([row.get(key) for _,key in columns])
+        values=[]
+        for _,key in columns:
+            if key=="difference":
+                try:
+                    value=round(float(row.get("ltp"))-float(row.get("entry")),2)
+                except (TypeError,ValueError):
+                    value=None
+            elif key=="strategy":
+                value=strategy_labels.get(row.get(key),row.get(key))
+            else:
+                value=row.get(key)
+            values.append(value)
+        ws.append(values)
     ws.freeze_panes="A2"
     ws.auto_filter.ref=ws.dimensions
     for col in ws.columns:
