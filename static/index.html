@@ -48,7 +48,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
 
   <div class="table">
     <table>
-      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Entry</th><th>LTP</th><th>+/- Difference</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th></tr></thead>
+      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Entry</th><th>LTP</th><th>P&amp;L (Points)</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th></tr></thead>
       <tbody id="tb"></tbody>
     </table>
   </div>
@@ -92,7 +92,7 @@ function render(){
       '<td class="'+cls+'">'+esc(r.side)+'</td>'+
       '<td>'+esc(r.entry)+'</td>'+
       '<td><b>'+esc(r.ltp)+'</b></td>'+
-      '<td>'+esc((Number(r.ltp)-Number(r.entry)>=0?'+':'')+(Number(r.ltp)-Number(r.entry)).toFixed(2))+'</td>'+
+      '<td class="'+((r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp))>=0?'buy':'sell')+'">'+esc(((r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp))>=0?'+':'')+(r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp)).toFixed(2))+'</td>'+
       '<td>'+esc(r.sl)+'</td>'+
       '<td>'+esc(r.target)+'</td>'+
       '<td>'+esc(r.range)+'</td>'+
