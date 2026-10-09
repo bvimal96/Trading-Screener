@@ -34,10 +34,10 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
   <div class="controls">
     <select id="st">
       <option value="">All strategies</option>
-      <option>Rolling 2-Day</option>
-      <option>Weekly High/Low</option>
-      <option>Weekly ORB</option>
-      <option>Monthly ORB</option>
+      <option value="Rolling 2-Day">Roll Intra Day</option>
+      <option value="Weekly High/Low">Week HL- EOW</option>
+      <option value="Weekly ORB">Week 2 Day</option>
+      <option value="Monthly ORB">Month 2 Day</option>
     </select>
     <select id="sd"><option value="">BUY + SELL</option><option>BUY</option><option>SELL</option></select>
     <select id="ss"><option value="">All status</option><option>OPEN</option><option>SL HIT</option><option>TARGET HIT</option></select>
@@ -48,7 +48,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
 
   <div class="table">
     <table>
-      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Entry</th><th>LTP</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th><th>Reference</th></tr></thead>
+      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Entry</th><th>LTP</th><th>+/- Difference</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th></tr></thead>
       <tbody id="tb"></tbody>
     </table>
   </div>
@@ -76,6 +76,8 @@ async function load(){
   }catch(e){last.textContent='Scanner connection error — retrying';}
 }
 
+function strategyLabel(s){return ({'Rolling 2-Day':'Roll Intra Day','Weekly High/Low':'Week HL- EOW','Weekly ORB':'Week 2 Day','Monthly ORB':'Month 2 Day'})[s]||s;}
+
 function render(){
   let x=q.value.toUpperCase(), status=ss.value;
   tb.innerHTML=d.filter(r=>
@@ -86,15 +88,15 @@ function render(){
     let h=(r.status==='OPEN')?'open':'hit';
     return '<tr>'+
       '<td><b>'+esc(r.symbol)+'</b></td>'+
-      '<td>'+esc(r.strategy)+'</td>'+
+      '<td>'+esc(strategyLabel(r.strategy))+'</td>'+
       '<td class="'+cls+'">'+esc(r.side)+'</td>'+
       '<td>'+esc(r.entry)+'</td>'+
       '<td><b>'+esc(r.ltp)+'</b></td>'+
+      '<td>'+esc((Number(r.ltp)-Number(r.entry)>=0?'+':'')+(Number(r.ltp)-Number(r.entry)).toFixed(2))+'</td>'+
       '<td>'+esc(r.sl)+'</td>'+
       '<td>'+esc(r.target)+'</td>'+
       '<td>'+esc(r.range)+'</td>'+
       '<td class="'+h+'">'+esc(r.status)+'</td>'+
-      '<td>'+esc(r.reference)+'</td>'+
       '</tr>';
   }).join('');
 }
