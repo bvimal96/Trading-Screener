@@ -2,7 +2,11 @@ import asyncio,time,os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI,Query,Request
-from fastapi.responses import HTMLResponse,JSONResponse
+from fastapi.responses import HTMLResponse,JSONResponse,StreamingResponse
+from io import BytesIO
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .universe import build_universe
@@ -102,6 +106,59 @@ def refresh():
     STATE["universe"]=build_universe()
     calculate(app)
     return {"ok":True,"universe":len(STATE["universe"]),"signals":len(STATE["rows"])}
+
+
+@app.get("/api/export.xlsx")
+def export_xlsx(
+    strategy:str|None=Query(None),
+    side:str|None=Query(None),
+    status:str|None=Query(None),
+    search:str|None=Query(None)
+):
+    rows=list(STATE["rows"])
+    if strategy:
+        rows=[x for x in rows if x.get("strategy")==strategy]
+    if side:
+        rows=[x for x in rows if x.get("side")==side]
+    if status:
+        rows=[x for x in rows if x.get("status")==status]
+    if search:
+        q=search.strip().upper()
+        rows=[x for x in rows if q in str(x.get("symbol","")).upper() or q in str(x.get("name","")).upper()]
+
+    columns=[
+        ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
+        ("Side","side"),("Entry Price","entry"),("LTP","ltp"),
+        ("Stop Loss","sl"),("Target","target"),("Range","range"),
+        ("Status","status"),("Reference","reference"),
+        ("Entry Time","entry_time"),("Event Time","event_time"),("Last Updated","updated")
+    ]
+    wb=Workbook()
+    ws=wb.active
+    ws.title="Screener Signals"
+    ws.append([c[0] for c in columns])
+    for cell in ws[1]:
+        cell.font=Font(bold=True,color="FFFFFF")
+        cell.fill=PatternFill("solid",fgColor="1F4E78")
+        cell.alignment=Alignment(horizontal="center")
+    for row in rows:
+        ws.append([row.get(key) for _,key in columns])
+    ws.freeze_panes="A2"
+    ws.auto_filter.ref=ws.dimensions
+    for col in ws.columns:
+        letter=col[0].column_letter
+        max_len=max((len(str(cell.value or "")) for cell in col),default=10)
+        ws.column_dimensions[letter].width=min(max(max_len+2,12),32)
+    ws.sheet_view.showGridLines=False
+    buffer=BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename="screener_signals_"+datetime.now().strftime("%Y%m%d_%H%M%S")+".xlsx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":f'attachment; filename="{filename}"'}
+    )
 
 @app.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request:Request):
