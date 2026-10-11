@@ -39,11 +39,17 @@ def calculate(app):
                     orb(u["symbol"],u["name"],d,intr,ltp,settings.weekly_orb_rr,False),
                     orb(u["symbol"],u["name"],d,intr,ltp,settings.monthly_orb_rr,True)
                 ]
+                # Rank using the total traded value across the previous two completed daily candles.
+                # Exclude the current session even if Yahoo exposes a partial daily candle.
+                daily_completed=d[d.index.date < ts.date()] if ts is not None else d
+                if not daily_completed.empty and "Volume" in daily_completed.columns:
+                    last_two=daily_completed.tail(2)
+                    previous_2day_value=float((last_two["Close"].astype(float)*last_two["Volume"].fillna(0).astype(float)).sum())
+                else:
+                    previous_2day_value=0.0
                 for s in ss:
                     if s:
-                        session_volume=float(intr["Volume"].fillna(0).sum()) if "Volume" in intr.columns else 0.0
-                        s["traded_value"]=round(float(s.get("ltp") or ltp)*session_volume,2)
-                        s["session_volume"]=int(session_volume)
+                        s["previous_2day_value"]=round(previous_2day_value,2)
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
@@ -56,7 +62,7 @@ def calculate(app):
         STATE["previous"] &= active
         # Prioritize index signals at the top: NIFTY 50 first, then BANKNIFTY, then all other symbols.
         priority={"NIFTY":0,"BANKNIFTY":1}
-        rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
+        rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("previous_2day_value",0)))
         STATE["rows"]=rows
         STATE["updated"]=time.time()
         print(f"SCAN_OK universe={len(STATE['universe'])} usable={usable} signals={len(rows)}",flush=True)
@@ -107,7 +113,7 @@ def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
     if side:
         r=[x for x in r if x["side"]==side]
     priority={"NIFTY":0,"BANKNIFTY":1}
-    r=sorted(r,key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
+    r=sorted(r,key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("previous_2day_value",0)))
     return {"updated":STATE["updated"],"data":r}
 
 @app.post("/api/refresh")
@@ -135,11 +141,11 @@ def export_xlsx(
         q=search.strip().upper()
         rows=[x for x in rows if q in str(x.get("symbol","")).upper() or q in str(x.get("name","")).upper()]
     priority={"NIFTY":0,"BANKNIFTY":1}
-    rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
+    rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("previous_2day_value",0)))
 
     columns=[
         ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
-        ("Side","side"),("Traded Value (₹)","traded_value"),("Session Volume","session_volume"),("Entry Price","entry"),("LTP","ltp"),("P&L (Points)","pnl"),
+        ("Side","side"),("Previous 2-Day Traded Value (₹)","previous_2day_value"),("Entry Price","entry"),("LTP","ltp"),("P&L (Points)","pnl"),
         ("Stop Loss","sl"),("Target","target"),("Range","range"),
         ("Status","status"),
         ("Entry Time","entry_time"),("Event Time","event_time"),("Last Updated","updated")
