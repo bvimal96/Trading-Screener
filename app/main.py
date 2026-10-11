@@ -1,5 +1,4 @@
 import asyncio,time,os
-import pandas as pd
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI,Query,Request
@@ -15,50 +14,6 @@ from .data import YahooData
 from .strategies import rolling,weekly,orb
 from .alerts import notify
 
-
-def score_signal(s,intr):
-    """Score breakout distance (30), candle strength (20), confirmation (10), and two volume measures (40)."""
-    try:
-        side=s.get("side")
-        entry=float(s.get("entry") or 0)
-        ltp=float(s.get("ltp") or 0)
-        rg=max(float(s.get("range") or 0),0.01)
-        favorable=(ltp-entry) if side=="BUY" else (entry-ltp)
-        distance_score=max(0.0,min(30.0,favorable/rg*30.0))
-        candle=intr.iloc[-1]
-        hi,lo,close=float(candle["High"]),float(candle["Low"]),float(candle["Close"])
-        cr=max(hi-lo,0.01)
-        close_strength=((close-lo)/cr) if side=="BUY" else ((hi-close)/cr)
-        candle_score=max(0.0,min(20.0,close_strength*20.0))
-        confirmed=(ltp>entry and close>=entry) if side=="BUY" else (ltp<entry and close<=entry)
-        confirm_score=10.0 if confirmed else 0.0
-        volumes=intr["Volume"].dropna().astype(float) if "Volume" in intr.columns else []
-        avg_vol=float(volumes.mean()) if len(volumes) else 0.0
-        current_vol=float(candle.get("Volume",0) or 0)
-        relative_volume=current_vol/avg_vol if avg_vol>0 else 0.0
-        current_volume_score=max(0.0,min(20.0,relative_volume*10.0))
-        breakout_volume_ratio=0.0
-        if s.get("entry_time") and avg_vol>0:
-            try:
-                ts=pd.Timestamp(s["entry_time"])
-                if ts.tzinfo is None and getattr(intr.index,"tz",None) is not None:
-                    ts=ts.tz_localize(intr.index.tz)
-                earlier=intr.loc[intr.index<=ts]
-                if not earlier.empty:
-                    breakout_volume_ratio=float(earlier.iloc[-1].get("Volume",0) or 0)/avg_vol
-            except Exception:
-                pass
-        breakout_volume_score=max(0.0,min(20.0,breakout_volume_ratio*10.0))
-        s["score"]=max(0,min(100,int(round(distance_score+candle_score+confirm_score+current_volume_score+breakout_volume_score))))
-        s["breakout_strength"]=round(distance_score+candle_score+confirm_score,1)
-        s["relative_volume"]=round(relative_volume,2)
-        s["breakout_volume_ratio"]=round(breakout_volume_ratio,2)
-    except Exception:
-        s["score"]=0
-        s["breakout_strength"]=0.0
-        s["relative_volume"]=0.0
-        s["breakout_volume_ratio"]=0.0
-    return s
 
 STATE={"universe":[],"rows":[],"updated":None,"error":None,"previous":set(),"scanning":False}
 
@@ -86,7 +41,9 @@ def calculate(app):
                 ]
                 for s in ss:
                     if s:
-                        score_signal(s,intr)
+                        session_volume=float(intr["Volume"].fillna(0).sum()) if "Volume" in intr.columns else 0.0
+                        s["traded_value"]=round(float(s.get("ltp") or ltp)*session_volume,2)
+                        s["session_volume"]=int(session_volume)
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
@@ -99,7 +56,7 @@ def calculate(app):
         STATE["previous"] &= active
         # Prioritize index signals at the top: NIFTY 50 first, then BANKNIFTY, then all other symbols.
         priority={"NIFTY":0,"BANKNIFTY":1}
-        rows.sort(key=lambda x: (priority.get(x.get("symbol"),2),-x.get("score",0)))
+        rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
         STATE["rows"]=rows
         STATE["updated"]=time.time()
         print(f"SCAN_OK universe={len(STATE['universe'])} usable={usable} signals={len(rows)}",flush=True)
@@ -150,7 +107,7 @@ def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
     if side:
         r=[x for x in r if x["side"]==side]
     priority={"NIFTY":0,"BANKNIFTY":1}
-    r=sorted(r,key=lambda x: (priority.get(x.get("symbol"),2),-x.get("score",0)))
+    r=sorted(r,key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
     return {"updated":STATE["updated"],"data":r}
 
 @app.post("/api/refresh")
@@ -178,11 +135,11 @@ def export_xlsx(
         q=search.strip().upper()
         rows=[x for x in rows if q in str(x.get("symbol","")).upper() or q in str(x.get("name","")).upper()]
     priority={"NIFTY":0,"BANKNIFTY":1}
-    rows.sort(key=lambda x: (priority.get(x.get("symbol"),2),-x.get("score",0)))
+    rows.sort(key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("traded_value",0)))
 
     columns=[
         ("Symbol","symbol"),("Company Name","name"),("Strategy","strategy"),
-        ("Side","side"),("Score","score"),("Breakout Strength","breakout_strength"),("Relative Volume","relative_volume"),("Breakout Volume Ratio","breakout_volume_ratio"),("Entry Price","entry"),("LTP","ltp"),("P&L (Points)","pnl"),
+        ("Side","side"),("Traded Value (₹)","traded_value"),("Session Volume","session_volume"),("Entry Price","entry"),("LTP","ltp"),("P&L (Points)","pnl"),
         ("Stop Loss","sl"),("Target","target"),("Range","range"),
         ("Status","status"),
         ("Entry Time","entry_time"),("Event Time","event_time"),("Last Updated","updated")
