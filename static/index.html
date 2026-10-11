@@ -8,7 +8,7 @@ body{font-family:Arial;margin:0;background:#f4f6f8;color:#17202a}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
 .card{background:white;padding:12px;border-radius:10px}.big{font-size:20px;font-weight:bold}
 .muted{font-size:11px;color:#667085}.controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-select,input,button{padding:9px;border:1px solid #ddd;border-radius:7px;background:white}
+select,input,button{padding:9px;border:1px solid #ddd;border-radius:7px;background:white;cursor:pointer}button.active{background:#111827;color:#fff;border-color:#111827}
 .table{overflow:auto;background:white;border-radius:10px}
 table{border-collapse:collapse;width:100%;min-width:1050px}
 th,td{padding:9px;border-bottom:1px solid #eee;text-align:right;font-size:12px}
@@ -42,6 +42,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
     <select id="sd"><option value="">BUY + SELL</option><option>BUY</option><option>SELL</option></select>
     <select id="ss"><option value="">All status</option><option>OPEN</option><option>SL HIT</option><option>TARGET HIT</option></select>
     <input id="q" placeholder="Search symbol">
+    <button id="viewMode" class="active" onclick="toggleView()">Top 10</button>
     <button onclick="refresh()">Refresh now</button>
     <button onclick="downloadExcel()">⬇ Download Excel</button>
   </div>
@@ -58,6 +59,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
 
 <script>
 let d=[];
+let viewMode="top10";
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 async function load(){
@@ -76,14 +78,18 @@ async function load(){
   }catch(e){last.textContent='Scanner connection error — retrying';}
 }
 
+function toggleView(){viewMode=viewMode==="top10"?"all":"top10";document.getElementById("viewMode").textContent=viewMode==="top10"?"Top 10":"All";render();}
 function strategyLabel(s){return ({'Rolling 2-Day':'Roll Intra Day','Weekly High/Low':'Week HL- EOW','Weekly ORB':'Week 2 Day','Monthly ORB':'Month 2 Day'})[s]||s;}
 
 function render(){
   let x=q.value.toUpperCase(), status=ss.value;
-  tb.innerHTML=d.filter(r=>
+  let rows=d.filter(r=>
     (!x||r.symbol.includes(x)||r.name.toUpperCase().includes(x)) &&
     (!status||r.status===status)
-  ).map(r=>{
+  );
+  rows.sort((a,b)=>{const p={NIFTY:0,BANKNIFTY:1};return (p[a.symbol]??2)-(p[b.symbol]??2) || Number(b.score||0)-Number(a.score||0);});
+  if(viewMode==="top10") rows=rows.slice(0,10);
+  tb.innerHTML=rows.map(r=>{
     let cls=r.side==='BUY'?'buy':'sell';
     let h=(r.status==='OPEN')?'open':'hit';
     return '<tr>'+
