@@ -49,7 +49,7 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
 
   <div class="table">
     <table>
-      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Traded Value (₹)</th><th>Session Volume</th><th>Entry</th><th>LTP</th><th>P&amp;L (Points)</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th></tr></thead>
+      <thead><tr><th>Symbol</th><th>Strategy</th><th>Side</th><th>Previous 2-Day Traded Value (₹)</th><th>Entry</th><th>LTP</th><th>P&amp;L (Points)</th><th>SL</th><th>Target</th><th>Range</th><th>Status</th></tr></thead>
       <tbody id="tb"></tbody>
     </table>
   </div>
@@ -90,7 +90,7 @@ function render(){
   const p={NIFTY:0,BANKNIFTY:1};
   const strategyOrder={"Rolling 2-Day":0,"Weekly High/Low":1,"Weekly ORB":2,"Monthly ORB":3};
   rows.sort((a,b)=>(strategyOrder[a.strategy]??9)-(strategyOrder[b.strategy]??9) ||
-    (p[a.symbol]??2)-(p[b.symbol]??2) || Number(b.traded_value||0)-Number(a.traded_value||0));
+    (p[a.symbol]??2)-(p[b.symbol]??2) || Number(b.previous_2day_value||0)-Number(a.previous_2day_value||0));
   if(viewMode==="top10"){
     const counts={};
     rows=rows.filter(r=>{counts[r.strategy]=(counts[r.strategy]||0)+1;return counts[r.strategy]<=10;});
@@ -102,8 +102,8 @@ function render(){
       '<td><b>'+esc(r.symbol)+'</b></td>'+
       '<td>'+esc(strategyLabel(r.strategy))+'</td>'+
       '<td class="'+cls+'">'+esc(r.side)+'</td>'+
-      '<td>'+esc((Number(r.traded_value||0)).toLocaleString('en-IN',{maximumFractionDigits:0}))+'</td>'+
-      '<td>'+esc((Number(r.session_volume||0)).toLocaleString('en-IN'))+'</td>'+
+      '<td>'+esc((Number(r.previous_2day_value||0)).toLocaleString('en-IN',{maximumFractionDigits:0}))+'</td>'+
+      
       '<td>'+esc(r.entry)+'</td>'+
       '<td><b>'+esc(r.ltp)+'</b></td>'+
       '<td class="'+((r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp))>=0?'buy':'sell')+'">'+esc(((r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp))>=0?'+':'')+(r.side==='BUY'?Number(r.ltp)-Number(r.entry):Number(r.entry)-Number(r.ltp)).toFixed(2))+'</td>'+
