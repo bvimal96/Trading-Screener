@@ -39,17 +39,21 @@ def calculate(app):
                     orb(u["symbol"],u["name"],d,intr,ltp,settings.weekly_orb_rr,False),
                     orb(u["symbol"],u["name"],d,intr,ltp,settings.monthly_orb_rr,True)
                 ]
-                # Rank using the total traded value across the previous two completed daily candles.
-                # Exclude the current session even if Yahoo exposes a partial daily candle.
-                daily_completed=d[d.index.date < ts.date()] if ts is not None else d
-                if not daily_completed.empty and "Volume" in daily_completed.columns:
-                    last_two=daily_completed.tail(2)
-                    previous_2day_value=float((last_two["Close"].astype(float)*last_two["Volume"].fillna(0).astype(float)).sum())
-                else:
-                    previous_2day_value=0.0
+                # Rank equities by total traded value (Close x Volume) over the
+                # previous two completed daily candles. Never rank the two indices
+                # by this metric; their signals come only from the four strategies.
+                previous_2day_value=None
+                if u["symbol"] not in ("NIFTY","BANKNIFTY"):
+                    daily_completed=d[d.index.date < ts.date()] if ts is not None else d
+                    if not daily_completed.empty and "Volume" in daily_completed.columns:
+                        last_two=daily_completed.tail(2)
+                        previous_2day_value=float((last_two["Close"].astype(float)*last_two["Volume"].fillna(0).astype(float)).sum())
+                    else:
+                        previous_2day_value=0.0
                 for s in ss:
                     if s:
-                        s["previous_2day_value"]=round(previous_2day_value,2)
+                        if u["symbol"] not in ("NIFTY","BANKNIFTY"):
+                            s["previous_2day_value"]=round(previous_2day_value,2)
                         s["updated"]=ts.isoformat() if ts else None
                         rows.append(s)
                         k=f"{s['symbol']}|{s['strategy']}|{s['side']}"
