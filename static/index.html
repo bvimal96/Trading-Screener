@@ -93,7 +93,11 @@ function render(){
     (p[a.symbol]??2)-(p[b.symbol]??2) || Number(b.previous_2day_value||0)-Number(a.previous_2day_value||0));
   if(viewMode==="top10"){
     const counts={};
-    rows=rows.filter(r=>{counts[r.strategy]=(counts[r.strategy]||0)+1;return counts[r.strategy]<=10;});
+    rows=rows.filter(r=>{
+      if(r.symbol==="NIFTY"||r.symbol==="BANKNIFTY") return true;
+      counts[r.strategy]=(counts[r.strategy]||0)+1;
+      return counts[r.strategy]<=10;
+    });
   }
   tb.innerHTML=rows.map(r=>{
     let cls=r.side==='BUY'?'buy':'sell';
