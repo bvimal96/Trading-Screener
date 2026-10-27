@@ -17,7 +17,7 @@ from .hourly import scan_hourly
 
 
 STATE={"universe":[],"rows":[],"updated":None,"error":None,"previous":set(),"scanning":False}
-HOURLY_STATE={"rows":[],"updated":None,"error":None}
+HOURLY_STATE={"rows":[],"updated":None,"error":None,"started_at":time.time()}
 
 def calculate(app):
     rows=[]; p=app.state.data
