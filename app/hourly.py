@@ -81,7 +81,10 @@ def scan_hourly(app,universe,state):
                 "ema":round(emav,2),"signal_id":sid,"updated":now,
                 "reference":"Completed 1-hour candle; full OHLC above/below both lines"}
             rows.append(signal)
-            if os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
+            # Do not replay a signal from a candle that was already closed before this
+            # process started (important on free instances that can sleep/restart).
+            candle_closed_at=bar_time.timestamp()+3600
+            if candle_closed_at > state.get("started_at", 0) and os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
                 notify(signal,os.getenv("PUBLIC_URL",""))
         except Exception:
             continue
