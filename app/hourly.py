@@ -83,7 +83,7 @@ def scan_hourly(app,universe,state):
             rows.append(signal)
             # Do not replay a signal from a candle that was already closed before this
             # process started (important on free instances that can sleep/restart).
-            candle_closed_at=bar_time.timestamp()+3600
+            candle_closed_at=bt.timestamp()+3600
             if candle_closed_at > state.get("started_at", 0) and os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
                 notify(signal,os.getenv("PUBLIC_URL",""))
         except Exception:
