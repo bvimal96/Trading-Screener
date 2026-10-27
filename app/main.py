@@ -13,9 +13,11 @@ from .universe import build_universe
 from .data import YahooData
 from .strategies import rolling,weekly,orb
 from .alerts import notify
+from .hourly import scan_hourly
 
 
 STATE={"universe":[],"rows":[],"updated":None,"error":None,"previous":set(),"scanning":False}
+HOURLY_STATE={"rows":[],"updated":None,"error":None}
 
 def calculate(app):
     rows=[]; p=app.state.data
@@ -79,6 +81,7 @@ async def worker(app):
             if not STATE["universe"]:
                 STATE["universe"]=await asyncio.to_thread(build_universe)
             await asyncio.to_thread(calculate,app)
+            await asyncio.to_thread(scan_hourly, app, STATE["universe"], HOURLY_STATE)
             STATE["error"]=None
         except Exception as e:
             STATE["error"]=str(e)
@@ -102,7 +105,7 @@ def home():
 @app.get("/health")
 def health():
     return {"ok":True,"updated":STATE["updated"],"universe":len(STATE["universe"]),
-            "signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"]}
+            "signals":len(STATE["rows"]),"scanning":STATE["scanning"],"error":STATE["error"],"hourly_signals":len(HOURLY_STATE["rows"]),"hourly_updated":HOURLY_STATE["updated"],"hourly_error":HOURLY_STATE["error"]}
 
 @app.get("/api/status")
 def status():
@@ -119,6 +122,15 @@ def signals(strategy:str|None=Query(None),side:str|None=Query(None)):
     priority={"NIFTY":0,"BANKNIFTY":1}
     r=sorted(r,key=lambda x: (x.get("strategy",""),priority.get(x.get("symbol"),2),-x.get("previous_2day_value",0)))
     return {"updated":STATE["updated"],"data":r}
+
+@app.get("/api/hourly-signals")
+def hourly_signals(side:str|None=Query(None)):
+    rows=list(HOURLY_STATE["rows"])
+    if side:
+        rows=[x for x in rows if x["side"]==side]
+    priority={"NIFTY":0,"BANKNIFTY":1}
+    rows.sort(key=lambda x:(priority.get(x.get("symbol"),2),x.get("symbol","")))
+    return {"updated":HOURLY_STATE["updated"],"error":HOURLY_STATE["error"],"data":rows}
 
 @app.post("/api/refresh")
 def refresh():

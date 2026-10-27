@@ -5,7 +5,7 @@ STATE_FILE=Path(os.getenv("ALERT_STATE_FILE","/tmp/alert_state.txt"))
 COOLDOWN=int(os.getenv("ALERT_COOLDOWN_MINUTES","120"))*60
 
 def _key(s):
-    return f"{s['symbol']}|{s['strategy']}|{s['side']}"
+    return str(s.get("signal_id") or f"{s['symbol']}|{s['strategy']}|{s['side']}")
 
 def should_alert(s):
     key=_key(s)
@@ -13,7 +13,7 @@ def should_alert(s):
     data={}
     if STATE_FILE.exists():
         for line in STATE_FILE.read_text().splitlines():
-            try:k,t=line.split("|",1); data[k]=float(t)
+            try:k,t=line.rsplit("|",1); data[k]=float(t)
             except:pass
     if now-data.get(key,0)<COOLDOWN:return False
     data[key]=now
@@ -30,7 +30,7 @@ def format_alert(s, url=""):
         f"SL: {s['sl']}\n"
         f"Target: {s['target']}\n"
         f"Range: {s['range']}\n"
-        f"Reference: {s['reference']}"
+        f"Reference: {s.get('reference', '')}"
         + (f"\n🌐 {url}" if url else "")
     )
 
