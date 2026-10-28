@@ -19,31 +19,86 @@ def _closed_bars(frame):
     return x.loc[keep]
 
 def _supertrend(frame,factor=3.0,period=10):
-    x=frame.copy()
-    prev=x["Close"].shift(1)
-    tr=pd.concat([x["High"]-x["Low"],(x["High"]-prev).abs(),(x["Low"]-prev).abs()],axis=1).max(axis=1)
-    atr=tr.ewm(alpha=1/period,min_periods=period,adjust=False).mean()
-    mid=(x["High"]+x["Low"])/2
-    up=mid-factor*atr
-    dn=mid+factor*atr
-    trend_up=pd.Series(index=x.index,dtype=float)
-    trend_dn=pd.Series(index=x.index,dtype=float)
-    trend=pd.Series(index=x.index,dtype=int)
+    """Return TSL using the user's supplied Supertrend formula.
+
+    Up = hl2 - factor * ATR(period)
+    Dn = hl2 + factor * ATR(period)
+    TrendUp = close[1] > TrendUp[1] ? max(Up, TrendUp[1]) : Up
+    TrendDown = close[1] < TrendDown[1] ? min(Dn, TrendDown[1]) : Dn
+    Trend = close > TrendDown[1] ? 1 : close < TrendUp[1] ? -1 : nz(Trend[1], 1)
+    TSL = Trend == 1 ? TrendUp : TrendDown
+    """
+    x = frame.copy()
+    if x.empty:
+        return pd.Series(index=x.index, dtype=float)
+
+    high = x["High"].astype(float)
+    low = x["Low"].astype(float)
+    close = x["Close"].astype(float)
+    prev_close = close.shift(1)
+
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    # Pine's ATR uses Wilder's RMA: SMA seed, then recursive smoothing.
+    atr = pd.Series(float("nan"), index=x.index, dtype=float)
+    if len(tr) >= period:
+        first_atr_idx = period - 1
+        atr.iloc[first_atr_idx] = tr.iloc[:period].mean()
+        for i in range(first_atr_idx + 1, len(tr)):
+            atr.iloc[i] = ((period - 1) * atr.iloc[i - 1] + tr.iloc[i]) / period
+
+    hl2 = (high + low) / 2.0
+    up = hl2 - factor * atr
+    dn = hl2 + factor * atr
+
+    trend_up = pd.Series(float("nan"), index=x.index, dtype=float)
+    trend_down = pd.Series(float("nan"), index=x.index, dtype=float)
+    trend = pd.Series(1, index=x.index, dtype=int)
+
     for i in range(len(x)):
-        if i==0 or pd.isna(atr.iloc[i]):
-            trend_up.iloc[i]=up.iloc[i]
-            trend_dn.iloc[i]=dn.iloc[i]
-            trend.iloc[i]=1
+        if pd.isna(atr.iloc[i]):
             continue
-        pu=trend_up.iloc[i-1]
-        pdn=trend_dn.iloc[i-1]
-        trend_up.iloc[i]=max(up.iloc[i],pu) if x["Close"].iloc[i-1]>pu else up.iloc[i]
-        trend_dn.iloc[i]=min(dn.iloc[i],pdn) if x["Close"].iloc[i-1]<pdn else dn.iloc[i]
-        trend.iloc[i]=1 if x["Close"].iloc[i]>pdn else (-1 if x["Close"].iloc[i]<pu else trend.iloc[i-1])
-    line=pd.Series(index=x.index,dtype=float)
-    line.loc[trend==1]=trend_up.loc[trend==1]
-    line.loc[trend==-1]=trend_dn.loc[trend==-1]
-    return line
+
+        # First valid ATR row initializes the bands. There is no previous band yet.
+        if i == 0 or pd.isna(trend_up.iloc[i - 1]) or pd.isna(trend_down.iloc[i - 1]):
+            trend_up.iloc[i] = up.iloc[i]
+            trend_down.iloc[i] = dn.iloc[i]
+            trend.iloc[i] = 1 if i == 0 else trend.iloc[i - 1]
+            continue
+
+        prev_up = trend_up.iloc[i - 1]
+        prev_down = trend_down.iloc[i - 1]
+        prev_close_value = close.iloc[i - 1]
+
+        trend_up.iloc[i] = (
+            max(up.iloc[i], prev_up)
+            if prev_close_value > prev_up
+            else up.iloc[i]
+        )
+        trend_down.iloc[i] = (
+            min(dn.iloc[i], prev_down)
+            if prev_close_value < prev_down
+            else dn.iloc[i]
+        )
+
+        if close.iloc[i] > prev_down:
+            trend.iloc[i] = 1
+        elif close.iloc[i] < prev_up:
+            trend.iloc[i] = -1
+        else:
+            trend.iloc[i] = trend.iloc[i - 1] if i > 0 else 1
+
+    tsl = pd.Series(float("nan"), index=x.index, dtype=float)
+    tsl.loc[trend == 1] = trend_up.loc[trend == 1]
+    tsl.loc[trend == -1] = trend_down.loc[trend == -1]
+    return tsl
 
 def scan_hourly(app,universe,state):
     data=app.state.data
