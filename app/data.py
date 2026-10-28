@@ -7,6 +7,7 @@ class YahooData:
         self.tz=tz
         self.dcache={}
         self.icache={}
+        self.hcache={}
         self.missing_d={}
         self.missing_i={}
 
@@ -53,6 +54,23 @@ class YahooData:
             if start+50<len(symbols):
                 time.sleep(1)
         return out
+
+    def prefetch_hourly(self,symbols):
+        now=time.time()
+        need=[s for s in symbols if s not in self.hcache or now-self.hcache[s][0]>=300]
+        for s,d in self._batch(need,"60d","1h").items():
+            self.hcache[s]=(now,d)
+        for s in need:
+            if s not in self.hcache:
+                self.hcache[s]=(now,pd.DataFrame())
+
+    def hourly(self,symbol):
+        now=time.time()
+        if symbol in self.hcache and now-self.hcache[symbol][0]<300:
+            return self.hcache[symbol][1]
+        d=self._batch([symbol],"60d","1h").get(symbol,pd.DataFrame())
+        self.hcache[symbol]=(now,d)
+        return d
 
     def prefetch(self,symbols):
         now=time.time()

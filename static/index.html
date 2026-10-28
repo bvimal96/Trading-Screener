@@ -53,6 +53,10 @@ th:first-child,td:first-child,td:nth-child(2),td:nth-child(3){text-align:left}
       <tbody id="tb"></tbody>
     </table>
   </div>
+  <h3 style="margin:18px 0 8px">Hourly Supertrend + EMA 50</h3>
+  <div class="muted" style="margin-bottom:8px">Completed 1-hour candles only • Full candle above both lines = BUY • Full candle below both lines = SELL</div>
+  <div class="table"><table style="min-width:900px"><thead><tr><th>Symbol</th><th>Signal</th><th>Completed Candle (IST)</th><th>Entry / Close</th><th>Supertrend</th><th>EMA 50</th><th>Data Source</th></tr></thead><tbody id="hourlyTb"><tr><td colspan="7">Waiting for hourly scan…</td></tr></tbody></table></div>
+  <div class="footer" id="hourlyLast">Hourly scan: —</div>
   <div class="footer" id="last">Last scan: —</div>
   <div class="footer">Yahoo/yfinance is a prototype data source and may be delayed. Verify the price in your trading terminal before acting. No orders are placed.</div>
 </div>
@@ -69,6 +73,7 @@ async function load(){
     if(sd.value)p.set('side',sd.value);
     d=(await (await fetch('/api/signals?'+p)).json()).data||[];
     render();
+    await loadHourly();
     let x=await (await fetch('/api/status')).json();
     u.textContent=x.universe;
     n.textContent=x.signals;
@@ -78,6 +83,14 @@ async function load(){
   }catch(e){last.textContent='Scanner connection error — retrying';}
 }
 
+async function loadHourly(){
+  try{
+    const payload=await (await fetch('/api/hourly-signals')).json();
+    const rows=payload.data||[];
+    hourlyTb.innerHTML=rows.length?rows.map(r=>'<tr><td><b>'+esc(r.symbol)+'</b></td><td class="'+(r.side==='BUY'?'buy':'sell')+'">'+esc(r.side)+'</td><td>'+esc(new Date(r.signal_time).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))+'</td><td>'+esc(r.entry)+'</td><td>'+esc(r.supertrend)+'</td><td>'+esc(r.ema)+'</td><td>Yahoo Finance (verify)</td></tr>').join(''):'<tr><td colspan="7">No qualifying signal on the latest completed hourly candle.</td></tr>';
+    hourlyLast.textContent='Hourly scan updated: '+(payload.updated?new Date(payload.updated*1000).toLocaleString():'waiting')+(payload.error?' • Error: '+payload.error:'');
+  }catch(e){hourlyTb.innerHTML='<tr><td colspan="7">Hourly scanner unavailable; retrying.</td></tr>';}
+}
 function toggleView(){viewMode=viewMode==="top10"?"all":"top10";document.getElementById("viewMode").textContent=viewMode==="top10"?"Top 10":"All";render();}
 function strategyLabel(s){return ({'Rolling 2-Day':'Roll Intra Day','Weekly High/Low':'Week HL- EOW','Weekly ORB':'Week 2 Day','Monthly ORB':'Month 2 Day'})[s]||s;}
 
