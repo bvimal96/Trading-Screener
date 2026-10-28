@@ -22,6 +22,23 @@ def _closed_bars(frame, now=None):
         keep.append(bool(complete and in_session and aligned))
     return x.loc[keep]
 
+
+def _is_recent_signal(signal_time, now=None):
+    """True only for signal candles dated today or yesterday in Asia/Kolkata."""
+    current = pd.Timestamp.now(tz="Asia/Kolkata") if now is None else pd.Timestamp(now)
+    if current.tzinfo is None:
+        current = current.tz_localize("Asia/Kolkata")
+    else:
+        current = current.tz_convert("Asia/Kolkata")
+    ts = pd.Timestamp(signal_time)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("Asia/Kolkata")
+    else:
+        ts = ts.tz_convert("Asia/Kolkata")
+    earliest_date = (current.normalize() - pd.Timedelta(days=1)).date()
+    return ts.date() >= earliest_date
+
+
 def _supertrend(frame,factor=3.0,period=10):
     """Return TSL using the user's supplied Supertrend formula.
 
@@ -137,9 +154,7 @@ def scan_hourly(app,universe,state):
             # Keep only signals from today or the previous calendar day in IST.
             # This prevents old Yahoo candles (including weekend/holiday data gaps)
             # from appearing as actionable current signals.
-            today_ist = pd.Timestamp.now(tz="Asia/Kolkata").normalize()
-            earliest_date = (today_ist - pd.Timedelta(days=1)).date()
-            if bt.date() < earliest_date:
+            if not _is_recent_signal(bt):
                 continue
             sid=f"hourly:{item['symbol']}:{bt.isoformat()}:{side}"
             signal={"symbol":item["symbol"],"name":item["name"],"strategy":"Hourly Supertrend + EMA 50","side":side,
