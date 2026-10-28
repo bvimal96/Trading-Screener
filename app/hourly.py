@@ -13,7 +13,7 @@ def _closed_bars(frame):
         local=ts.tz_convert("Asia/Kolkata") if ts.tzinfo else ts.tz_localize("Asia/Kolkata")
         minute=local.hour*60+local.minute
         complete=local+pd.Timedelta(minutes=60)<=now
-        in_session=9*60+15<=minute<15*60+15
+        in_session=9*60+15<=minute<15*60
         aligned=(minute-(9*60+15))%60==0
         keep.append(bool(complete and in_session and aligned))
     return x.loc[keep]
