@@ -23,8 +23,12 @@ def _closed_bars(frame, now=None):
     return x.loc[keep]
 
 
-def _is_recent_signal(signal_time, now=None):
-    """True only for signal candles dated today or yesterday in Asia/Kolkata."""
+def _is_recent_signal(signal_time, now=None, available_bars=None):
+    """Keep signals from the latest two market sessions represented in Yahoo bars.
+
+    Using actual session dates (rather than calendar-day subtraction) preserves
+    Friday signals on Monday and also handles weekends and exchange holidays.
+    """
     current = pd.Timestamp.now(tz="Asia/Kolkata") if now is None else pd.Timestamp(now)
     if current.tzinfo is None:
         current = current.tz_localize("Asia/Kolkata")
@@ -35,8 +39,19 @@ def _is_recent_signal(signal_time, now=None):
         ts = ts.tz_localize("Asia/Kolkata")
     else:
         ts = ts.tz_convert("Asia/Kolkata")
-    earliest_date = (current.normalize() - pd.Timedelta(days=1)).date()
-    return ts.date() >= earliest_date
+
+    if available_bars is None or available_bars.empty:
+        # Conservative fallback for callers without market-session data.
+        earliest_date = (current.normalize() - pd.Timedelta(days=1)).date()
+        return ts.date() >= earliest_date
+
+    session_dates = set()
+    for bar_time in available_bars.index:
+        local = bar_time.tz_convert("Asia/Kolkata") if bar_time.tzinfo else bar_time.tz_localize("Asia/Kolkata")
+        if local.date() <= current.date():
+            session_dates.add(local.date())
+    latest_sessions = sorted(session_dates)[-2:]
+    return ts.date() in latest_sessions
 
 
 def _supertrend(frame,factor=3.0,period=10):
@@ -151,10 +166,9 @@ def scan_hourly(app,universe,state):
             side="BUY" if above else "SELL"
             bt=bars.index[-1]
             bt=bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
-            # Keep only signals from today or the previous calendar day in IST.
-            # This prevents old Yahoo candles (including weekend/holiday data gaps)
-            # from appearing as actionable current signals.
-            if not _is_recent_signal(bt):
+            # Keep signals from the latest two market sessions, not calendar days.
+            # Yahoo's available hourly bars also account for weekends and holidays.
+            if not _is_recent_signal(bt, available_bars=raw):
                 continue
             sid=f"hourly:{item['symbol']}:{bt.isoformat()}:{side}"
             signal={"symbol":item["symbol"],"name":item["name"],"strategy":"Hourly Supertrend + EMA 50","side":side,
