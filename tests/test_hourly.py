@@ -57,13 +57,25 @@ def test_supertrend_empty_input_is_safe():
 
 
 
-def test_recent_signal_cutoff_keeps_today_and_yesterday_only():
-    now = pd.Timestamp("2026-10-28 10:00:00", tz="Asia/Kolkata")
-    assert _is_recent_signal("2026-10-28 09:15:00+05:30", now=now)
-    assert _is_recent_signal("2026-10-27 14:15:00+05:30", now=now)
-    assert not _is_recent_signal("2026-10-26 14:15:00+05:30", now=now)
+def test_recent_signal_uses_latest_two_market_sessions_not_calendar_days():
+    now = pd.Timestamp("2026-10-26 10:00:00", tz="Asia/Kolkata")  # Monday
+    sessions = pd.date_range(
+        "2026-10-19 09:15:00", periods=6, freq="B", tz="Asia/Kolkata"
+    )
+    bars = pd.DataFrame({"Close": range(len(sessions))}, index=sessions)
+    assert _is_recent_signal("2026-10-26 09:15:00+05:30", now=now, available_bars=bars)
+    assert _is_recent_signal("2026-10-23 14:15:00+05:30", now=now, available_bars=bars)
+    assert not _is_recent_signal("2026-10-22 14:15:00+05:30", now=now, available_bars=bars)
 
 
-def test_recent_signal_cutoff_excludes_friday_signal_on_monday():
-    now = pd.Timestamp("2026-10-26 09:00:00", tz="Asia/Kolkata")
-    assert not _is_recent_signal("2026-10-23 14:15:00+05:30", now=now)
+def test_recent_signal_handles_exchange_holiday_gap_using_available_sessions():
+    now = pd.Timestamp("2026-10-27 10:00:00", tz="Asia/Kolkata")
+    # Assume Monday was an exchange holiday; Yahoo bars show Friday then Tuesday.
+    sessions = pd.DatetimeIndex([
+        "2026-10-22 09:15:00+05:30",
+        "2026-10-23 09:15:00+05:30",
+        "2026-10-27 09:15:00+05:30",
+    ])
+    bars = pd.DataFrame({"Close": [1, 2, 3]}, index=sessions)
+    assert _is_recent_signal("2026-10-23 09:15:00+05:30", now=now, available_bars=bars)
+    assert not _is_recent_signal("2026-10-22 09:15:00+05:30", now=now, available_bars=bars)
