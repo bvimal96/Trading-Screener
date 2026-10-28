@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from app.hourly import _closed_bars, _supertrend
+from app.hourly import _closed_bars, _is_recent_signal, _supertrend
 
 
 def test_closed_bars_excludes_unfinished_and_partial_close_bar():
@@ -54,3 +54,16 @@ def test_supertrend_empty_input_is_safe():
     frame = pd.DataFrame(columns=["Open", "High", "Low", "Close"])
     result = _supertrend(frame, factor=3.0, period=10)
     assert result.empty
+
+
+
+def test_recent_signal_cutoff_keeps_today_and_yesterday_only():
+    now = pd.Timestamp("2026-10-28 10:00:00", tz="Asia/Kolkata")
+    assert _is_recent_signal("2026-10-28 09:15:00+05:30", now=now)
+    assert _is_recent_signal("2026-10-27 14:15:00+05:30", now=now)
+    assert not _is_recent_signal("2026-10-26 14:15:00+05:30", now=now)
+
+
+def test_recent_signal_cutoff_excludes_friday_signal_on_monday():
+    now = pd.Timestamp("2026-10-26 09:00:00", tz="Asia/Kolkata")
+    assert not _is_recent_signal("2026-10-23 14:15:00+05:30", now=now)
