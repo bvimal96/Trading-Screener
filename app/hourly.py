@@ -3,11 +3,15 @@ import time
 import pandas as pd
 from .alerts import notify
 
-def _closed_bars(frame):
+def _closed_bars(frame, now=None):
     if frame is None or frame.empty:
         return frame
     x=frame.copy().sort_index()
-    now=pd.Timestamp.now(tz="Asia/Kolkata")
+    now = pd.Timestamp.now(tz="Asia/Kolkata") if now is None else pd.Timestamp(now)
+    if now.tzinfo is None:
+        now = now.tz_localize("Asia/Kolkata")
+    else:
+        now = now.tz_convert("Asia/Kolkata")
     keep=[]
     for ts in x.index:
         local=ts.tz_convert("Asia/Kolkata") if ts.tzinfo else ts.tz_localize("Asia/Kolkata")
