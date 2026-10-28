@@ -134,6 +134,13 @@ def scan_hourly(app,universe,state):
             side="BUY" if above else "SELL"
             bt=bars.index[-1]
             bt=bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
+            # Keep only signals from today or the previous calendar day in IST.
+            # This prevents old Yahoo candles (including weekend/holiday data gaps)
+            # from appearing as actionable current signals.
+            today_ist = pd.Timestamp.now(tz="Asia/Kolkata").normalize()
+            earliest_date = (today_ist - pd.Timedelta(days=1)).date()
+            if bt.date() < earliest_date:
+                continue
             sid=f"hourly:{item['symbol']}:{bt.isoformat()}:{side}"
             signal={"symbol":item["symbol"],"name":item["name"],"strategy":"Hourly Supertrend + EMA 50","side":side,
                 "signal_time":bt.isoformat(),"entry":round(c,2),"ltp":round(c,2),"supertrend":round(stv,2),
