@@ -6,7 +6,7 @@ on:
       - hourly-supertrend-standalone
   pull_request:
     branches:
-      - hourly-supertrend-standalone
+      - main
 
 jobs:
   tests:
