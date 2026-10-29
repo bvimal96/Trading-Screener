@@ -26,7 +26,7 @@
  <button id="reload">Refresh</button>
  <button id="export">Download results (CSV/Excel)</button>
 </div>
-<div class="table"><table><thead><tr><th>Symbol</th><th>Signal</th><th>Entry / Close</th><th>Supertrend</th><th>EMA 50</th><th>Completed candle (IST)</th></tr></thead><tbody id="rows"><tr><td colspan="6">Waiting for first scan…</td></tr></tbody></table></div>
+<div class="table"><table><thead><tr><th>Symbol</th><th>Signal</th><th>Entry price</th><th>Trailing SL</th><th>Supertrend</th><th>EMA 50</th><th>Status</th><th>Signal time (IST)</th><th>Exit time (IST)</th></tr></thead><tbody id="rows"><tr><td colspan="6">Waiting for first scan…</td></tr></tbody></table></div>
 <div id="updated" class="footer">Last scan: waiting</div>
 <div id="error" class="footer"></div>
 <div class="footer">Yahoo Finance data may be delayed, incomplete, or rate-limited. Verify signals and prices independently before making any trading decision. This screener does not place orders.</div>
@@ -50,7 +50,7 @@ async function load(){
   const params=new URLSearchParams();if(el("side").value)params.set("side",el("side").value);if(el("search").value.trim())params.set("search",el("search").value.trim());
   const response=await fetch("/api/hourly-signals?"+params.toString(),{cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);
   const payload=await response.json();currentData=(payload.data||[]).slice().sort((a,b)=>priority(a)-priority(b)||String(a.symbol).localeCompare(String(b.symbol)));
-  el("rows").innerHTML=currentData.length?currentData.map(r=>'<tr class="'+(r.side==="BUY"?"buy-row":"sell-row")+'"><td><b>'+esc(r.symbol||r.name)+'</b></td><td>'+esc(r.side)+'</td><td>'+esc(r.entry)+'</td><td>'+esc(r.supertrend)+'</td><td>'+esc(r.ema)+'</td><td>'+esc(r.signal_time?new Date(r.signal_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"—")+'</td></tr>').join(""):'<tr><td colspan="6">No qualifying signal on the latest completed hourly candle.</td></tr>';
+  el("rows").innerHTML=currentData.length?currentData.map(r=>'<tr class="'+(r.side==="BUY"?"buy-row":"sell-row")+'"><td><b>'+esc(r.symbol||r.name)+'</b></td><td>'+esc(r.side)+'</td><td>'+esc(r.entry)+'</td><td>'+esc(r.sl)+'</td><td>'+esc(r.supertrend)+'</td><td>'+esc(r.ema)+'</td><td>'+esc(r.status||"ACTIVE")+(r.exit_price!=null?' ('+esc(r.exit_price)+')':'')+'</td><td>'+esc(r.signal_time?new Date(r.signal_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"—")+'</td><td>'+esc(r.exit_time?new Date(r.exit_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"—")+'</td></tr>').join(""):'<tr><td colspan="9">No qualifying signal has been recorded yet.</td></tr>';
   const health=await (await fetch("/health",{cache:"no-store"})).json();el("universe").textContent=health.universe;el("buys").textContent=currentData.filter(r=>r.side==="BUY").length;el("sells").textContent=currentData.filter(r=>r.side==="SELL").length;
   el("updated").textContent="Last scan: "+(payload.updated?new Date(payload.updated*1000).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"waiting");
   el("error").textContent=payload.error?"Data/scan warning: "+payload.error:"";
@@ -58,8 +58,8 @@ async function load(){
 }
 function downloadResults(){
  if(!currentData.length){el("error").textContent="No results to export yet. Refresh the screener and try again.";return;}
- const columns=[["Symbol","symbol"],["Signal","side"],["Entry / Close","entry"],["Supertrend","supertrend"],["EMA 50","ema"],["Completed candle (IST)","signal_time"]];
- const csv=[columns.map(c=>c[0]),...currentData.map(r=>columns.map(c=>c[1]==="signal_time"?(r.signal_time?new Date(r.signal_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):""):(r[c[1]]??"")))].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const columns=[["Symbol","symbol"],["Signal","side"],["Entry price","entry"],["Trailing SL","sl"],["Supertrend","supertrend"],["EMA 50","ema"],["Status","status"],["Exit price","exit_price"],["Signal time (IST)","signal_time"],["Exit time (IST)","exit_time"]];
+ const csv=[columns.map(c=>c[0]),...currentData.map(r=>columns.map(c=>(c[1]==="signal_time"||c[1]==="exit_time")?(r[c[1]]?new Date(r[c[1]]).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):""):(r[c[1]]??"")))].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="hourly-supertrend-results.csv";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
