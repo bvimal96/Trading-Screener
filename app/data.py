@@ -59,19 +59,30 @@ class YahooData:
 
     def prefetch_hourly(self,symbols):
         now=time.time()
-        need=[s for s in symbols if s not in self.hcache or now-self.hcache[s][0]>=300]
-        for s,d in self._batch(need,"60d","1h").items():
-            self.hcache[s]=(now,d)
+        need=[s for s in symbols if s not in self.hcache or now-self.hcache[s][0]>=900]
+        downloaded = self._batch(need,"60d","1h")
+        for s,d in downloaded.items():
+            if d is not None and not d.empty:
+                self.hcache[s]=(now,d)
+            elif s in self.hcache:
+                # Keep last valid bars after transient Yahoo failures.
+                self.hcache[s]=(now,self.hcache[s][1])
         for s in need:
             if s not in self.hcache:
                 self.hcache[s]=(now,pd.DataFrame())
 
     def hourly(self,symbol):
         now=time.time()
-        if symbol in self.hcache and now-self.hcache[symbol][0]<300:
+        if symbol in self.hcache and now-self.hcache[symbol][0]<900:
             return self.hcache[symbol][1]
         d=self._batch([symbol],"60d","1h").get(symbol,pd.DataFrame())
-        self.hcache[symbol]=(now,d)
+        if d is not None and not d.empty:
+            self.hcache[symbol]=(now,d)
+        elif symbol in self.hcache:
+            self.hcache[symbol]=(now,self.hcache[symbol][1])
+            d=self.hcache[symbol][1]
+        else:
+            self.hcache[symbol]=(now,pd.DataFrame())
         return d
 
     def prefetch(self,symbols):
