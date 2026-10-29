@@ -86,6 +86,11 @@ def health():
     }
 
 
+@app.get("/api/hourly-history")
+def hourly_history():
+    return {"updated": STATE["updated"], "data": STATE.get("history", [])}
+
+
 @app.get("/api/hourly-signals")
 def hourly_signals(side: str | None = Query(None), search: str | None = Query(None)):
     rows = list(STATE["rows"])
