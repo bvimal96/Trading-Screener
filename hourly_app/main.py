@@ -52,12 +52,29 @@ def home():
 
 @app.get("/health")
 def health():
+    data = getattr(app.state, "data", None)
+    cache = getattr(data, "hcache", {}) if data is not None else {}
+    covered = {
+        symbol for symbol, item in cache.items()
+        if len(item) > 1 and item[1] is not None and not item[1].empty
+    }
+    expected_symbols = [item.get("yahoo") for item in STATE["universe"]]
+    missing = [symbol for symbol in expected_symbols if symbol not in covered]
+    expected = len(expected_symbols)
+    attempted = sum(1 for symbol in expected_symbols if symbol in cache)
     return {
         "ok": True,
-        "universe": len(STATE["universe"]),
+        "universe": expected,
         "signals": len(STATE["rows"]),
         "updated": STATE["updated"],
         "error": STATE["error"],
+        "data_coverage": {
+            "attempted_symbols": attempted,
+            "covered_symbols": len(covered.intersection(set(expected_symbols))),
+            "missing_symbols": len(missing),
+            "coverage_pct": round(100 * len(covered.intersection(set(expected_symbols))) / expected, 1) if expected else 0,
+            "missing_sample": missing[:20],
+        },
     }
 
 
