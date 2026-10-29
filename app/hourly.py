@@ -135,61 +135,103 @@ def scan_hourly(app,universe,state):
         data.prefetch_hourly(symbols)
     except Exception as exc:
         state["error"]=str(exc)
+
     rows=[]
+    history=[]
     now=time.time()
-    current = pd.Timestamp.now(tz="Asia/Kolkata")
     for item in universe:
         try:
             raw=data.hourly(item["yahoo"])
             bars=_closed_bars(raw)
             if bars is None or len(bars)<60:
+                # Preserve last good row when Yahoo is temporarily rate-limiting.
+                previous=state.get("by_symbol",{}).get(item["symbol"])
+                if previous:
+                    rows.append(previous)
                 continue
 
             st=_supertrend(bars,3.0,10)
             ema=bars["Close"].ewm(span=50,adjust=False,min_periods=50).mean()
-            valid = bars.copy()
-            valid["_st"] = st
-            valid["_ema"] = ema
-            valid = valid.dropna(subset=["_st","_ema"])
+            valid=bars.copy()
+            valid["_st"]=st
+            valid["_ema"]=ema
+            valid=valid.dropna(subset=["_st","_ema"])
             if valid.empty:
                 continue
 
-            # Search completed candles dated today or yesterday, rather than
-            # testing only the final downloaded candle. This preserves a valid
-            # signal formed earlier in today's session while excluding older signals.
-            qualifying = []
-            for bt, bar in valid.iterrows():
-                bt_local = bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
-                if not _is_recent_signal(bt_local, now=current):
-                    continue
+            active=None
+            last_trade=None
+            symbol_history=[]
+            for bt,bar in valid.iterrows():
+                bt_local=bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
                 o,h,l,c=[float(bar[k]) for k in ("Open","High","Low","Close")]
                 stv=float(bar["_st"]); emav=float(bar["_ema"])
+
+                # A trailing stop established by the previous completed candle
+                # is tested against this candle. Only after surviving it do we
+                # trail the stop to the current candle's Supertrend.
+                if active is not None:
+                    old_stop=float(active["sl"])
+                    hit=(l<=old_stop) if active["side"]=="BUY" else (h>=old_stop)
+                    if hit:
+                        exit_price=min(o,old_stop) if active["side"]=="BUY" else max(o,old_stop)
+                        active["status"]="SL HIT"
+                        active["exit_time"]=bt_local.isoformat()
+                        active["exit_price"]=round(exit_price,2)
+                        active["updated"]=now
+                        last_trade=active
+                        symbol_history.append(dict(active))
+                        active=None
+                        # Avoid ambiguous same-candle re-entry after an SL touch.
+                        continue
+                    if active["side"]=="BUY":
+                        active["sl"]=round(max(old_stop,stv),2)
+                    else:
+                        active["sl"]=round(min(old_stop,stv),2)
+                    active["ltp"]=round(c,2)
+                    active["supertrend"]=round(stv,2)
+                    active["ema"]=round(emav,2)
+                    active["updated"]=now
+                    continue
+
                 above=min(o,h,l,c)>stv and min(o,h,l,c)>emav
                 below=max(o,h,l,c)<stv and max(o,h,l,c)<emav
-                if above or below:
-                    qualifying.append((bt_local, bar, "BUY" if above else "SELL", stv, emav))
+                if not (above or below):
+                    continue
 
-            if not qualifying:
-                continue
+                side="BUY" if above else "SELL"
+                active={
+                    "symbol":item["symbol"],"name":item["name"],
+                    "strategy":"Hourly Supertrend + EMA 50","side":side,
+                    "signal_time":bt_local.isoformat(),"entry":round(c,2),
+                    "ltp":round(c,2),"supertrend":round(stv,2),
+                    "ema":round(emav,2),"sl":round(stv,2),
+                    "status":"ACTIVE","exit_time":None,"exit_price":None,
+                    "signal_id":f"hourly:{item['symbol']}:{bt_local.isoformat()}:{side}",
+                    "updated":now,
+                    "reference":"First completed 1-hour candle with full OHLC above/below both lines"
+                }
+                # Alert only for signals that formed after this process started.
+                if bt_local.timestamp()+3600>state.get("started_at",0) and os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
+                    notify(active,os.getenv("PUBLIC_URL",""))
+                last_trade=active
+                symbol_history.append(dict(active))
 
-            bt, bar, side, stv, emav = qualifying[-1]
-            c=float(bar["Close"])
-            sid=f"hourly:{item['symbol']}:{bt.isoformat()}:{side}"
-            signal={"symbol":item["symbol"],"name":item["name"],"strategy":"Hourly Supertrend + EMA 50","side":side,
-                "signal_time":bt.isoformat(),"entry":round(c,2),"ltp":round(c,2),"supertrend":round(stv,2),
-                "ema":round(emav,2),"signal_id":sid,"updated":now,
-                "reference":"Completed 1-hour candle; full OHLC above/below both lines"}
-            rows.append(signal)
-
-            # Do not replay a signal from a candle that was already closed before this
-            # process started (important on free instances that can sleep/restart).
-            candle_closed_at=bt.timestamp()+3600
-            if candle_closed_at > state.get("started_at", 0) and os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
-                notify(signal,os.getenv("PUBLIC_URL",""))
+            latest=active if active is not None else last_trade
+            if latest is not None:
+                rows.append(latest)
+                history.extend(symbol_history)
         except Exception as exc:
             print(f"HOURLY_SYMBOL_SCAN_ERROR {item.get('symbol', item.get('yahoo'))}: {exc}", flush=True)
+            previous=state.get("by_symbol",{}).get(item["symbol"])
+            if previous:
+                rows.append(previous)
             continue
+
     priority={"NIFTY":0,"BANKNIFTY":1}
     rows.sort(key=lambda item:(priority.get(item["symbol"],2),item["symbol"]))
+    history.sort(key=lambda item:(item["symbol"],item["signal_time"]))
     state["rows"]=rows
+    state["by_symbol"]={item["symbol"]:item for item in rows}
+    state["history"]=history
     state["updated"]=now
