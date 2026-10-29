@@ -24,35 +24,26 @@ def _closed_bars(frame, now=None):
 
 
 def _is_recent_signal(signal_time, now=None, available_bars=None):
-    """Keep signals from the latest two market sessions represented in Yahoo bars.
+    """Show only signals dated today or yesterday in India.
 
-    Using actual session dates (rather than calendar-day subtraction) preserves
-    Friday signals on Monday and also handles weekends and exchange holidays.
+    Do not derive freshness from the newest date present in Yahoo's response:
+    stale responses can end several sessions ago and incorrectly make an old
+    signal look recent relative to that stale data.
     """
     current = pd.Timestamp.now(tz="Asia/Kolkata") if now is None else pd.Timestamp(now)
     if current.tzinfo is None:
         current = current.tz_localize("Asia/Kolkata")
     else:
         current = current.tz_convert("Asia/Kolkata")
+
     ts = pd.Timestamp(signal_time)
     if ts.tzinfo is None:
         ts = ts.tz_localize("Asia/Kolkata")
     else:
         ts = ts.tz_convert("Asia/Kolkata")
 
-    if available_bars is None or available_bars.empty:
-        # Conservative fallback for callers without market-session data.
-        earliest_date = (current.normalize() - pd.Timedelta(days=1)).date()
-        return ts.date() >= earliest_date
-
-    session_dates = set()
-    for bar_time in available_bars.index:
-        local = bar_time.tz_convert("Asia/Kolkata") if bar_time.tzinfo else bar_time.tz_localize("Asia/Kolkata")
-        if local.date() <= current.date():
-            session_dates.add(local.date())
-    latest_sessions = sorted(session_dates)[-2:]
-    return ts.date() in latest_sessions
-
+    age_days = (current.date() - ts.date()).days
+    return 0 <= age_days <= 1
 
 def _supertrend(frame,factor=3.0,period=10):
     """Return TSL using the user's supplied Supertrend formula.
