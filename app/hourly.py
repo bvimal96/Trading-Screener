@@ -137,42 +137,57 @@ def scan_hourly(app,universe,state):
         state["error"]=str(exc)
     rows=[]
     now=time.time()
+    current = pd.Timestamp.now(tz="Asia/Kolkata")
     for item in universe:
         try:
             raw=data.hourly(item["yahoo"])
             bars=_closed_bars(raw)
             if bars is None or len(bars)<60:
                 continue
+
             st=_supertrend(bars,3.0,10)
             ema=bars["Close"].ewm(span=50,adjust=False,min_periods=50).mean()
-            bar=bars.iloc[-1]
-            stv=float(st.iloc[-1]); emav=float(ema.iloc[-1])
-            if pd.isna(stv) or pd.isna(emav):
+            valid = bars.copy()
+            valid["_st"] = st
+            valid["_ema"] = ema
+            valid = valid.dropna(subset=["_st","_ema"])
+            if valid.empty:
                 continue
-            o,h,l,c=[float(bar[k]) for k in ("Open","High","Low","Close")]
-            above=min(o,h,l,c)>stv and min(o,h,l,c)>emav
-            below=max(o,h,l,c)<stv and max(o,h,l,c)<emav
-            if not above and not below:
+
+            # Search completed candles dated today or yesterday, rather than
+            # testing only the final downloaded candle. This preserves a valid
+            # signal formed earlier in today's session while excluding older signals.
+            qualifying = []
+            for bt, bar in valid.iterrows():
+                bt_local = bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
+                if not _is_recent_signal(bt_local, now=current):
+                    continue
+                o,h,l,c=[float(bar[k]) for k in ("Open","High","Low","Close")]
+                stv=float(bar["_st"]); emav=float(bar["_ema"])
+                above=min(o,h,l,c)>stv and min(o,h,l,c)>emav
+                below=max(o,h,l,c)<stv and max(o,h,l,c)<emav
+                if above or below:
+                    qualifying.append((bt_local, bar, "BUY" if above else "SELL", stv, emav))
+
+            if not qualifying:
                 continue
-            side="BUY" if above else "SELL"
-            bt=bars.index[-1]
-            bt=bt.tz_localize("Asia/Kolkata") if bt.tzinfo is None else bt.tz_convert("Asia/Kolkata")
-            # Keep signals from the latest two market sessions, not calendar days.
-            # Yahoo's available hourly bars also account for weekends and holidays.
-            if not _is_recent_signal(bt, available_bars=raw):
-                continue
+
+            bt, bar, side, stv, emav = qualifying[-1]
+            c=float(bar["Close"])
             sid=f"hourly:{item['symbol']}:{bt.isoformat()}:{side}"
             signal={"symbol":item["symbol"],"name":item["name"],"strategy":"Hourly Supertrend + EMA 50","side":side,
                 "signal_time":bt.isoformat(),"entry":round(c,2),"ltp":round(c,2),"supertrend":round(stv,2),
                 "ema":round(emav,2),"signal_id":sid,"updated":now,
                 "reference":"Completed 1-hour candle; full OHLC above/below both lines"}
             rows.append(signal)
+
             # Do not replay a signal from a candle that was already closed before this
             # process started (important on free instances that can sleep/restart).
             candle_closed_at=bt.timestamp()+3600
             if candle_closed_at > state.get("started_at", 0) and os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID"):
                 notify(signal,os.getenv("PUBLIC_URL",""))
-        except Exception:
+        except Exception as exc:
+            print(f"HOURLY_SYMBOL_SCAN_ERROR {item.get('symbol', item.get('yahoo'))}: {exc}", flush=True)
             continue
     priority={"NIFTY":0,"BANKNIFTY":1}
     rows.sort(key=lambda item:(priority.get(item["symbol"],2),item["symbol"]))
