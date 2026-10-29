@@ -180,7 +180,7 @@ def scan_hourly(app,universe,state):
                         active["exit_price"]=round(exit_price,2)
                         active["updated"]=now
                         last_trade=active
-                        symbol_history.append(dict(active))
+                        symbol_history.append(active)
                         active=None
                         # Avoid ambiguous same-candle re-entry after an SL touch.
                         continue
