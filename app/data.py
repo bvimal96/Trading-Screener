@@ -29,8 +29,10 @@ class YahooData:
         if not symbols:
             return {}
         out={}
-        for start in range(0,len(symbols),50):
-            chunk=symbols[start:start+50]
+        # Smaller batches with a pause reduce burst pressure on Yahoo's unofficial endpoint.
+        batch_size = 15 if interval == "1h" else 50
+        for start in range(0,len(symbols),batch_size):
+            chunk=symbols[start:start+batch_size]
             try:
                 raw=yf.download(
                     tickers=chunk,period=period,interval=interval,
@@ -51,8 +53,8 @@ class YahooData:
                         out[chunk[0]]=self.clean(raw)
             except Exception:
                 pass
-            if start+50<len(symbols):
-                time.sleep(1)
+            if start+batch_size<len(symbols):
+                time.sleep(2 if interval == "1h" else 1)
         return out
 
     def prefetch_hourly(self,symbols):
@@ -84,7 +86,6 @@ class YahooData:
             self.icache[s]=(now,d)
             self.missing_i.pop(s,None)
 
-        # Avoid immediate single-symbol retry storms for symbols Yahoo rejects.
         for s in dneed:
             if s not in self.dcache:
                 self.missing_d[s]=now
