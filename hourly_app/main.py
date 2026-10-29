@@ -20,6 +20,14 @@ async def worker(app):
         try:
             if not STATE["universe"]:
                 STATE["universe"] = await asyncio.to_thread(build_universe)
+            # Yahoo batch requests can rate-limit and omit index tickers. Retry the two
+            # priority indices individually when their cached hourly frame is missing/empty.
+            data = app.state.data
+            for index_symbol in ("^NSEI", "^NSEBANK"):
+                cached = data.hcache.get(index_symbol)
+                if cached is None or cached[1] is None or cached[1].empty:
+                    data.hcache.pop(index_symbol, None)
+                    await asyncio.to_thread(data.hourly, index_symbol)
             await asyncio.to_thread(scan_hourly, app, STATE["universe"], STATE)
             STATE["error"] = STATE.get("error")
         except Exception as exc:
