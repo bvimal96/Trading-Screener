@@ -7,6 +7,7 @@ class YahooData:
         self.tz=tz
         self.dcache={}
         self.icache={}
+        self.hcache={}
         self.missing_d={}
         self.missing_i={}
 
@@ -28,8 +29,10 @@ class YahooData:
         if not symbols:
             return {}
         out={}
-        for start in range(0,len(symbols),50):
-            chunk=symbols[start:start+50]
+        # Smaller batches with a pause reduce burst pressure on Yahoo's unofficial endpoint.
+        batch_size = 15 if interval == "1h" else 50
+        for start in range(0,len(symbols),batch_size):
+            chunk=symbols[start:start+batch_size]
             try:
                 raw=yf.download(
                     tickers=chunk,period=period,interval=interval,
@@ -50,9 +53,37 @@ class YahooData:
                         out[chunk[0]]=self.clean(raw)
             except Exception:
                 pass
-            if start+50<len(symbols):
-                time.sleep(1)
+            if start+batch_size<len(symbols):
+                time.sleep(2 if interval == "1h" else 1)
         return out
+
+    def prefetch_hourly(self,symbols):
+        now=time.time()
+        need=[s for s in symbols if s not in self.hcache or now-self.hcache[s][0]>=900]
+        downloaded = self._batch(need,"60d","1h")
+        for s,d in downloaded.items():
+            if d is not None and not d.empty:
+                self.hcache[s]=(now,d)
+            elif s in self.hcache:
+                # Keep last valid bars after transient Yahoo failures.
+                self.hcache[s]=(now,self.hcache[s][1])
+        for s in need:
+            if s not in self.hcache:
+                self.hcache[s]=(now,pd.DataFrame())
+
+    def hourly(self,symbol):
+        now=time.time()
+        if symbol in self.hcache and now-self.hcache[symbol][0]<900:
+            return self.hcache[symbol][1]
+        d=self._batch([symbol],"60d","1h").get(symbol,pd.DataFrame())
+        if d is not None and not d.empty:
+            self.hcache[symbol]=(now,d)
+        elif symbol in self.hcache:
+            self.hcache[symbol]=(now,self.hcache[symbol][1])
+            d=self.hcache[symbol][1]
+        else:
+            self.hcache[symbol]=(now,pd.DataFrame())
+        return d
 
     def prefetch(self,symbols):
         now=time.time()
@@ -66,7 +97,6 @@ class YahooData:
             self.icache[s]=(now,d)
             self.missing_i.pop(s,None)
 
-        # Avoid immediate single-symbol retry storms for symbols Yahoo rejects.
         for s in dneed:
             if s not in self.dcache:
                 self.missing_d[s]=now

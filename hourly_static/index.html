@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hourly Supertrend Screener</title>
+<style>
+:root{font-family:Arial,sans-serif;color:#17202a;background:#f3f5f8}
+*{box-sizing:border-box}body{margin:0}.top{background:#111827;color:#fff;padding:18px 14px}.top h1{font-size:20px;margin:0 0 6px}.top p{font-size:12px;margin:0;color:#d0d5dd}
+.wrap{max-width:1300px;margin:auto;padding:12px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.card{background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 3px #0001}.label{font-size:11px;color:#667085}.value{font-size:20px;font-weight:700;margin-top:5px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.controls input,.controls select,.controls button{padding:10px;border:1px solid #d0d5dd;border-radius:7px;background:#fff;font-size:14px}.controls button{cursor:pointer}.controls button:hover{background:#f2f4f7}
+.table{overflow:auto;background:#fff;border-radius:10px}table{border-collapse:collapse;width:100%;min-width:760px}th,td{padding:11px 10px;border-bottom:1px solid #eaecf0;text-align:left;font-size:12px;white-space:nowrap}th{background:#f9fafb;color:#475467;position:sticky;top:0}.buy{color:#067647;font-weight:700}.sell{color:#b42318;font-weight:700}.buy-row td,.buy-row td *{color:#067647!important;font-weight:700}.sell-row td,.sell-row td *{color:#b42318!important;font-weight:700}.muted{font-size:12px}.footer{margin:10px 0;color:#667085;font-size:11px}
+@media(max-width:600px){.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.value{font-size:17px}.card{padding:9px}.top h1{font-size:18px}}
+</style></head>
+<body>
+<header class="top"><h1>⚡ Hourly Supertrend Screener</h1><p>Yahoo Finance · NIFTY · BANKNIFTY · NIFTY 50 constituents · NSE F&O</p></header>
+<main class="wrap">
+<div class="cards">
+ <div class="card"><div class="label">Universe symbols</div><div id="universe" class="value">—</div></div>
+ <div class="card"><div class="label">BUY signals</div><div id="buys" class="value buy">—</div></div>
+ <div class="card"><div class="label">SELL signals</div><div id="sells" class="value sell">—</div></div>
+</div>
+<p class="muted">Rules: your Supertrend formula (ATR 10, factor 3) + EMA 50. Only completed 1-hour candles. BUY when all OHLC values are above both lines; SELL when all OHLC values are below both lines.</p>
+<div class="controls">
+ <select id="side"><option value="">BUY + SELL</option><option value="BUY">BUY only</option><option value="SELL">SELL only</option></select>
+ <input id="search" placeholder="Search symbol or company">
+ <button id="reload">Refresh</button>
+ <button id="export">Download results (CSV/Excel)</button>
+</div>
+<div class="table"><table><thead><tr><th>Symbol</th><th>Signal</th><th>Entry price</th><th>Trailing SL</th><th>Supertrend</th><th>EMA 50</th><th>Status</th><th>Signal time (IST)</th><th>Exit time (IST)</th></tr></thead><tbody id="rows"><tr><td colspan="6">Waiting for first scan…</td></tr></tbody></table></div>
+<div id="updated" class="footer">Last scan: waiting</div>
+<div id="error" class="footer"></div>
+<div class="footer">Yahoo Finance data may be delayed, incomplete, or rate-limited. Verify signals and prices independently before making any trading decision. This screener does not place orders.</div>
+</main>
+<script>
+const el=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let currentData=[];
+function priority(r){
+ const s=String(r.symbol||"").toUpperCase().replace(/[^A-Z0-9]/g,""),n=String(r.name||"").toUpperCase();
+ if(s==="NSEI"||n.includes("NIFTY 50")||n==="NIFTY")return 0;
+ if(s==="NSEBANK"||n.includes("BANKNIFTY")||n.includes("NIFTY BANK"))return 1;
+ if(s.startsWith("MARUTI")||n.includes("MARUTI"))return 2;
+ if(s.startsWith("BAJAJAUTO")||n.includes("BAJAJ AUTO"))return 3;
+ if(s.startsWith("TITAN")||n.includes("TITAN"))return 4;
+ if(s.startsWith("TRENT")||n.includes("TRENT"))return 5;
+ return 6;
+}
+async function load(){
+ try{
+  const params=new URLSearchParams();if(el("side").value)params.set("side",el("side").value);if(el("search").value.trim())params.set("search",el("search").value.trim());
+  const response=await fetch("/api/hourly-signals?"+params.toString(),{cache:"no-store"});if(!response.ok)throw new Error("HTTP "+response.status);
+  const payload=await response.json();currentData=(payload.data||[]).slice().sort((a,b)=>priority(a)-priority(b)||String(a.symbol).localeCompare(String(b.symbol)));
+  el("rows").innerHTML=currentData.length?currentData.map(r=>'<tr class="'+(r.side==="BUY"?"buy-row":"sell-row")+'"><td><b>'+esc(r.symbol||r.name)+'</b></td><td>'+esc(r.side)+'</td><td>'+esc(r.entry)+'</td><td>'+esc(r.sl)+'</td><td>'+esc(r.supertrend)+'</td><td>'+esc(r.ema)+'</td><td>'+esc(r.status||"ACTIVE")+(r.exit_price!=null?' ('+esc(r.exit_price)+')':'')+'</td><td>'+esc(r.signal_time?new Date(r.signal_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"—")+'</td><td>'+esc(r.exit_time?new Date(r.exit_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"—")+'</td></tr>').join(""):'<tr><td colspan="9">No qualifying signal has been recorded yet.</td></tr>';
+  const health=await (await fetch("/health",{cache:"no-store"})).json();el("universe").textContent=health.universe;el("buys").textContent=currentData.filter(r=>r.side==="BUY").length;el("sells").textContent=currentData.filter(r=>r.side==="SELL").length;
+  el("updated").textContent="Last scan: "+(payload.updated?new Date(payload.updated*1000).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):"waiting");
+  el("error").textContent=payload.error?"Data/scan warning: "+payload.error:"";
+ }catch(e){el("error").textContent="Could not load screener data. It will retry automatically.";}
+}
+function downloadResults(){
+ if(!currentData.length){el("error").textContent="No results to export yet. Refresh the screener and try again.";return;}
+ const columns=[["Symbol","symbol"],["Signal","side"],["Entry price","entry"],["Trailing SL","sl"],["Supertrend","supertrend"],["EMA 50","ema"],["Status","status"],["Exit price","exit_price"],["Signal time (IST)","signal_time"],["Exit time (IST)","exit_time"]];
+ const csv=[columns.map(c=>c[0]),...currentData.map(r=>columns.map(c=>(c[1]==="signal_time"||c[1]==="exit_time")?(r[c[1]]?new Date(r[c[1]]).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):""):(r[c[1]]??"")))].map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download="hourly-supertrend-results.csv";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+el("side").addEventListener("change",load);el("search").addEventListener("input",()=>{clearTimeout(window.searchTimer);window.searchTimer=setTimeout(load,250)});el("reload").addEventListener("click",load);el("export").addEventListener("click",downloadResults);load();setInterval(load,60000);
+</script></body></html>

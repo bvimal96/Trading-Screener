@@ -5,7 +5,7 @@ STATE_FILE=Path(os.getenv("ALERT_STATE_FILE","/tmp/alert_state.txt"))
 COOLDOWN=int(os.getenv("ALERT_COOLDOWN_MINUTES","120"))*60
 
 def _key(s):
-    return f"{s['symbol']}|{s['strategy']}|{s['side']}"
+    return str(s.get("signal_id") or f"{s['symbol']}|{s['strategy']}|{s['side']}")
 
 def should_alert(s):
     key=_key(s)
@@ -13,7 +13,7 @@ def should_alert(s):
     data={}
     if STATE_FILE.exists():
         for line in STATE_FILE.read_text().splitlines():
-            try:k,t=line.split("|",1); data[k]=float(t)
+            try:k,t=line.rsplit("|",1); data[k]=float(t)
             except:pass
     if now-data.get(key,0)<COOLDOWN:return False
     data[key]=now
@@ -22,17 +22,27 @@ def should_alert(s):
 
 def format_alert(s, url=""):
     icon="🟢 BUY" if s["side"]=="BUY" else "🔴 SELL"
-    return (
-        f"{icon}\n"
-        f"📌 {s['symbol']} — {s['strategy']}\n"
-        f"Entry: {s['entry']}\n"
-        f"LTP: {s['ltp']}\n"
-        f"SL: {s['sl']}\n"
-        f"Target: {s['target']}\n"
-        f"Range: {s['range']}\n"
-        f"Reference: {s['reference']}"
-        + (f"\n🌐 {url}" if url else "")
-    )
+    lines=[
+        f"{icon}",
+        f"📌 {s['symbol']} — {s['strategy']}",
+        f"Entry / Close: {s.get('entry', '')}",
+        f"LTP: {s.get('ltp', '')}"
+    ]
+    if s.get("sl") is not None:
+        lines.append(f"SL: {s['sl']}")
+    if s.get("target") is not None:
+        lines.append(f"Target: {s['target']}")
+    if s.get("supertrend") is not None:
+        lines.append(f"Supertrend: {s['supertrend']}")
+    if s.get("ema") is not None:
+        lines.append(f"EMA 50: {s['ema']}")
+    if s.get("signal_time"):
+        lines.append(f"Completed candle (IST): {s['signal_time']}")
+    if s.get("reference"):
+        lines.append(f"Rule: {s['reference']}")
+    if url:
+        lines.append(f"🌐 {url}")
+    return "\n".join(lines)
 
 def telegram_send(text):
     token=os.getenv("TELEGRAM_BOT_TOKEN")
